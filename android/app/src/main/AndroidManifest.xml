@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permesso per l'accesso ad Internet -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="app_campionato_calcio"
         android:name="${applicationName}"
