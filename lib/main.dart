@@ -201,7 +201,7 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Partite CSRB'),
+        title: const Text('CSRB U14 Squadra B - Campionato 2026/27'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
