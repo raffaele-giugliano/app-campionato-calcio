@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const CampionatoApp());
@@ -319,6 +320,19 @@ class DettaglioPartitaScreen extends StatelessWidget {
     required this.indexRiga,
   });
 
+  Future<void> _apriGoogleMaps(String indirizzo) async {
+    final query = Uri.encodeComponent(indirizzo);
+    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  bool _isCampoIndirizzo(String header) {
+    final cleanHeader = header.trim().toLowerCase();
+    return cleanHeader.contains('indirizzo') || cleanHeader.contains('campo');
+  }
+
   @override
   Widget build(BuildContext context) {
     // Nella pagina di dettaglio mostra TUTTI i campi dalla Colonna B in poi
@@ -334,6 +348,9 @@ class DettaglioPartitaScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: campiDettaglio.map((item) {
+            final isIndirizzo = _isCampoIndirizzo(item.intestazione);
+            final haValore = item.valore.trim().isNotEmpty && item.valore != '-';
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 20.0),
               child: Column(
@@ -355,6 +372,18 @@ class DettaglioPartitaScreen extends StatelessWidget {
                       color: Colors.grey.shade800,
                     ),
                   ),
+                  if (isIndirizzo && haValore) ...[
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () => _apriGoogleMaps(item.valore),
+                      icon: const Icon(Icons.map),
+                      label: const Text('Apri Google Maps'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
