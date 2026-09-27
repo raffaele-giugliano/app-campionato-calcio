@@ -366,7 +366,9 @@ class DettaglioPartitaScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    item.valore.isEmpty ? '-' : item.valore,
+                    item.valore.isEmpty 
+                        ? '-' 
+                        : item.valore.replaceAll(', ', '\n'),
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey.shade800,
