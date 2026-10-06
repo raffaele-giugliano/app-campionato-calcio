@@ -17,6 +17,7 @@ class CampionatoApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
       ),
       home: const ListaPartiteScreen(),
     );
@@ -46,16 +47,24 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
   List<List<CampoDato>> _righePartite = [];
   int _indiceProssimaPartita = -1;
 
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _fetchAndParseData();
   }
 
-  // Converte la stringa data 'gg-mm-aaaa' in DateTime per il confronto
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   DateTime? _parseData(String dataStr) {
     try {
-      final parts = dataStr.trim().split('-');
+      final cleanStr = dataStr.trim().replaceAll('/', '-');
+      final parts = cleanStr.split('-');
       if (parts.length == 3) {
         final giorno = int.parse(parts[0]);
         final mese = int.parse(parts[1]);
@@ -75,10 +84,12 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
     try {
       String? csvRawContent;
 
-      // 1. Prova download tramite corsproxy.io per superare restrizioni CORS
+      // 1. Download con proxy e timeout di 3 secondi per evitare blocchi
       final proxyUrl = 'https://corsproxy.io/?' + Uri.encodeComponent(_csvUrl);
       try {
-        final res = await http.get(Uri.parse(proxyUrl));
+        final res = await http.get(Uri.parse(proxyUrl)).timeout(
+              const Duration(seconds: 3),
+            );
         if (res.statusCode == 200 && res.body.isNotEmpty) {
           csvRawContent = res.body;
         }
@@ -86,7 +97,9 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
 
       // 2. Fallback chiamata diretta
       if (csvRawContent == null || csvRawContent.isEmpty) {
-        final res = await http.get(Uri.parse(_csvUrl));
+        final res = await http.get(Uri.parse(_csvUrl)).timeout(
+              const Duration(seconds: 4),
+            );
         if (res.statusCode == 200) {
           csvRawContent = res.body;
         }
@@ -120,14 +133,12 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
             }
           }
 
-          // Calcolo della prima riga con giorno >= data odierna
           final oggi = DateTime.now();
           final oggiSenzaOra = DateTime(oggi.year, oggi.month, oggi.day);
           int indiceEvidenziato = -1;
 
           for (int i = 0; i < tempRighe.length; i++) {
             final riga = tempRighe[i];
-            // Cerca il campo con intestazione 'giorno'
             final campoGiorno = riga.firstWhere(
               (c) => c.intestazione.trim().toLowerCase() == 'giorno',
               orElse: () => CampoDato(intestazione: '', valore: ''),
@@ -139,7 +150,7 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
                 if (dataPartita.isAfter(oggiSenzaOra) ||
                     dataPartita.isAtSameMomentAs(oggiSenzaOra)) {
                   indiceEvidenziato = i;
-                  break; // Trovata la prima partita >= oggi
+                  break;
                 }
               }
             }
@@ -150,6 +161,13 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
             _indiceProssimaPartita = indiceEvidenziato;
             _isLoading = false;
           });
+
+          // Scroll basato sull'offset stimato
+          if (_indiceProssimaPartita > 0) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scrollToProssimaPartitaOffset();
+            });
+          }
         } else {
           setState(() {
             _errorMessage = 'Nessun dato trovato nel file CSV.';
@@ -167,6 +185,24 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
         _errorMessage = 'Errore durante la lettura dei dati: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  void _scrollToProssimaPartitaOffset() {
+    if (_indiceProssimaPartita > 0 && _scrollController.hasClients) {
+      // Calcolo stimato dell'altezza di ciascuna card + margini
+      const double altezzaStimataCard = 150.0;
+      final double targetOffset = _indiceProssimaPartita * altezzaStimataCard;
+
+      final double maxScroll = _scrollController.position.maxScrollExtent;
+      final double finalOffset =
+          targetOffset > maxScroll ? maxScroll : targetOffset;
+
+      _scrollController.animateTo(
+        finalOffset,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
@@ -236,19 +272,17 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
                     ],
                   ),
                 )
-              : ListView.separated(
+              : ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16.0),
                   itemCount: _righePartite.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final riga = _righePartite[index];
                     final isEvidenziata = (index == _indiceProssimaPartita);
 
-                    // Escludiamo la Colonna A (indice 0)
                     final campiDaColonnaB =
                         riga.length > 1 ? riga.sublist(1) : riga;
 
-                    // Filtra solo i campi fino alla colonna 'Note' (inclusa) per la schermata principale
                     List<CampoDato> campiPrimaPagina = [];
                     for (var campo in campiDaColonnaB) {
                       campiPrimaPagina.add(campo);
@@ -257,40 +291,26 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
                       }
                     }
 
-                    // Prende solo quelli con valore non vuoto
                     final campiDaMostrare = campiPrimaPagina
                         .where((c) => c.valore.isNotEmpty)
                         .toList();
 
                     return Container(
-                      color: isEvidenziata ? Colors.cyan.shade100 : Colors.transparent,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        title: Wrap(
-                          spacing: 12.0,
-                          runSpacing: 6.0,
-                          children: campiDaMostrare.map((item) {
-                            return RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade900,
-                                ),
-                                children: [
-                                  TextSpan(
-                                    text: '${item.intestazione} ',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  TextSpan(text: item.valore),
-                                ],
-                              ),
-                            );
-                          }).toList(),
+                      margin: const EdgeInsets.only(bottom: 16.0),
+                      decoration: BoxDecoration(
+                        color: isEvidenziata
+                            ? const Color(0xFFEBF3FF)
+                            : const Color(0xFFF2F4F7),
+                        borderRadius: BorderRadius.circular(16.0),
+                        border: Border.all(
+                          color: isEvidenziata
+                              ? const Color(0xFF2563EB)
+                              : Colors.transparent,
+                          width: 2.0,
                         ),
-                        trailing: const Icon(Icons.chevron_right),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16.0),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -302,6 +322,74 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
                             ),
                           );
                         },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (isEvidenziata) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10.0, vertical: 4.0),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1D4ED8),
+                                    borderRadius: BorderRadius.circular(6.0),
+                                  ),
+                                  child: const Text(
+                                    'PROSSIMA PARTITA',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11.0,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12.0),
+                              ],
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: campiDaMostrare.map((item) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                              bottom: 4.0),
+                                          child: RichText(
+                                            text: TextSpan(
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: Colors.grey.shade900,
+                                              ),
+                                              children: [
+                                                TextSpan(
+                                                  text:
+                                                      '${item.intestazione} ',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                TextSpan(text: item.valore),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    color: Colors.grey.shade500,
+                                    size: 24,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     );
                   },
@@ -322,7 +410,8 @@ class DettaglioPartitaScreen extends StatelessWidget {
 
   Future<void> _apriGoogleMaps(String indirizzo) async {
     final query = Uri.encodeComponent(indirizzo);
-    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    final url =
+        Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     }
@@ -335,7 +424,6 @@ class DettaglioPartitaScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Nella pagina di dettaglio mostra TUTTI i campi dalla Colonna B in poi
     final campiDettaglio =
         rigaCompleta.length > 1 ? rigaCompleta.sublist(1) : rigaCompleta;
 
@@ -349,7 +437,8 @@ class DettaglioPartitaScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: campiDettaglio.map((item) {
             final isIndirizzo = _isCampoIndirizzo(item.intestazione);
-            final haValore = item.valore.trim().isNotEmpty && item.valore != '-';
+            final haValore =
+                item.valore.trim().isNotEmpty && item.valore != '-';
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 20.0),
@@ -366,8 +455,8 @@ class DettaglioPartitaScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    item.valore.isEmpty 
-                        ? '-' 
+                    item.valore.isEmpty
+                        ? '-'
                         : item.valore.replaceAll(', ', '\n'),
                     style: TextStyle(
                       fontSize: 16,
