@@ -28,7 +28,7 @@ jobs:
           flutter pub get
 
       - name: Build Web
-        run: flutter build web --release --base-href "/app-campionato-calcio/"
+        run: flutter build web --release --web-renderer html --tree-shake-icons --base-href "/app-campionato-calcio/"
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
