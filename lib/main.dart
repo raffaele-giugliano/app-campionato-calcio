@@ -63,9 +63,10 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
 
   DateTime? _parseData(String dataStr) {
     try {
-      final cleanStr = dataStr.trim().replaceAll('/', '-');
+      final soloData = dataStr.split(' - ').first.trim();
+      final cleanStr = soloData.replaceAll('/', '-');
       final parts = cleanStr.split('-');
-      if (parts.length == 3) {
+      if (parts.length == 3 && parts[2].length == 4) {
         final giorno = int.parse(parts[0]);
         final mese = int.parse(parts[1]);
         final anno = int.parse(parts[2]);
@@ -73,6 +74,24 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
       }
     } catch (_) {}
     return null;
+  }
+
+  String _formattaDataConGiornoSettimana(String rawValue) {
+    final parsedDate = _parseData(rawValue);
+    if (parsedDate != null) {
+      const giorniSettimana = [
+        'Lunedì',
+        'Martedì',
+        'Mercoledì',
+        'Giovedì',
+        'Venerdì',
+        'Sabato',
+        'Domenica',
+      ];
+      final nomeGiorno = giorniSettimana[parsedDate.weekday - 1];
+      return '${rawValue.trim()} - $nomeGiorno';
+    }
+    return rawValue;
   }
 
   Future<void> _fetchAndParseData() async {
@@ -121,6 +140,14 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
               String val = c < riga.length ? riga[c].trim() : '';
 
               if (header.isNotEmpty) {
+                // Se siamo sulla colonna B (c == 1) o se l'intestazione è esplicitamente Giorno/Data
+                if (val.isNotEmpty &&
+                    (c == 1 ||
+                        header.toLowerCase() == 'giorno' ||
+                        header.toLowerCase() == 'data')) {
+                  val = _formattaDataConGiornoSettimana(val);
+                }
+
                 campiRiga.add(CampoDato(
                   intestazione: header,
                   valore: val,
@@ -140,8 +167,12 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
           for (int i = 0; i < tempRighe.length; i++) {
             final riga = tempRighe[i];
             final campoGiorno = riga.firstWhere(
-              (c) => c.intestazione.trim().toLowerCase() == 'giorno',
-              orElse: () => CampoDato(intestazione: '', valore: ''),
+              (c) =>
+                  c.intestazione.trim().toLowerCase() == 'giorno' ||
+                  c.intestazione.trim().toLowerCase() == 'data',
+              orElse: () => riga.length > 1
+                  ? riga[1] // Colonna B come fallback
+                  : (riga.isNotEmpty ? riga.first : CampoDato(intestazione: '', valore: '')),
             );
 
             if (campoGiorno.valore.isNotEmpty) {
@@ -190,7 +221,6 @@ class _ListaPartiteScreenState extends State<ListaPartiteScreen> {
 
   void _scrollToProssimaPartitaOffset() {
     if (_indiceProssimaPartita > 0 && _scrollController.hasClients) {
-      // Calcolo stimato dell'altezza di ciascuna card + margini
       const double altezzaStimataCard = 150.0;
       final double targetOffset = _indiceProssimaPartita * altezzaStimataCard;
 
